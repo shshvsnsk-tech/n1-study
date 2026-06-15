@@ -1,0 +1,17 @@
+# Source books and rendered reference pages
+*.pdf
+pdf-samples/
+
+# Local test tools and browser profiles
+tools/
+.edge-*/
+
+# Local automation and verification artifacts
+automation-progress.json
+preview.png
+mobile-preview.png
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini

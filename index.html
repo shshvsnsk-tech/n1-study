@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f4efe6">
+  <title>N1 研习室</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#home" aria-label="返回首页">
+      <span class="brand-mark">日</span>
+      <span>
+        <strong>N1 研习室</strong>
+        <small>文字词汇 · 文法</small>
+      </span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <button class="nav-item active" data-view="home">今日</button>
+      <button class="nav-item" data-view="cards">卡片</button>
+      <button class="nav-item" data-view="quiz">测验</button>
+      <button class="nav-item" data-view="library">词库</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home-view" class="view active">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">今日の一歩</p>
+          <h1>每天记一点，<br>把 N1 变成长期记忆。</h1>
+          <p class="hero-copy">基于红宝书与蓝宝书整理。学习记录只保存在你的浏览器中。</p>
+          <button class="primary-button" id="start-review">开始今日复习</button>
+        </div>
+        <div class="enso" aria-hidden="true"><span>学</span></div>
+      </div>
+
+      <div class="dashboard-grid">
+        <article class="panel progress-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">学习进度</p>
+              <h2>今天的节奏</h2>
+            </div>
+            <div class="daily-target-control">
+              <span id="today-date" class="quiet"></span>
+              <label>
+                每日目标
+                <select id="daily-target">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="30">30</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="progress-ring-wrap">
+            <div class="progress-ring" id="progress-ring">
+              <span id="progress-percent">0%</span>
+            </div>
+            <div>
+              <strong id="today-count">0 / 20</strong>
+              <p class="quiet">今日已复习</p>
+            </div>
+          </div>
+          <div class="mini-stats">
+            <div><strong id="streak-count">0</strong><span>连续天数</span></div>
+            <div><strong id="mastered-count">0</strong><span>已掌握</span></div>
+            <div><strong id="due-count">0</strong><span>待复习</span></div>
+          </div>
+        </article>
+
+        <article class="panel daily-panel">
+          <p class="eyebrow">每日一词</p>
+          <div id="daily-word"></div>
+          <button class="text-button" data-open-daily="word">查看详情 →</button>
+        </article>
+
+        <article class="panel daily-panel grammar-accent">
+          <p class="eyebrow">每日语法</p>
+          <div id="daily-grammar"></div>
+          <button class="text-button" data-open-daily="grammar">查看详情 →</button>
+        </article>
+      </div>
+    </section>
+
+    <section id="cards-view" class="view">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">FLASH CARDS</p>
+          <h1>卡片复习</h1>
+        </div>
+        <div class="segmented" id="card-type">
+          <button class="active" data-type="mixed">混合</button>
+          <button data-type="word">单词</button>
+          <button data-type="grammar">语法</button>
+        </div>
+      </div>
+      <div class="study-layout">
+        <div class="card-stage">
+          <div class="study-card" id="study-card" tabindex="0" role="button" aria-label="点击翻转卡片">
+            <div class="card-face card-front" id="card-front"></div>
+            <div class="card-face card-back" id="card-back"></div>
+          </div>
+          <p class="card-hint">空格翻面 · 翻面后按 1–4 评分</p>
+          <div class="rating-buttons" id="rating-buttons">
+            <button data-rating="again">忘记了<small>1 分钟后</small></button>
+            <button data-rating="hard">有点难<small>明天</small></button>
+            <button data-rating="good">记得<small>3 天后</small></button>
+            <button data-rating="easy">很熟<small>7 天后</small></button>
+          </div>
+        </div>
+        <aside class="session-panel panel">
+          <p class="eyebrow">本轮复习</p>
+          <h2><span id="session-current">1</span> / <span id="session-total">0</span></h2>
+          <div class="linear-progress"><span id="session-progress"></span></div>
+          <dl>
+            <div><dt>待学习</dt><dd id="session-new">0</dd></div>
+            <div><dt>需巩固</dt><dd id="session-learning">0</dd></div>
+            <div><dt>今日完成</dt><dd id="session-done">0</dd></div>
+          </dl>
+          <button class="secondary-button" id="shuffle-cards">重新洗牌</button>
+        </aside>
+      </div>
+    </section>
+
+    <section id="quiz-view" class="view">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">20 QUESTIONS</p>
+          <h1>20 题小测试</h1>
+          <p class="quiet quiz-heading-note">混合模式固定考察 10 道词汇和 10 道语法。</p>
+        </div>
+        <div class="quiz-controls">
+          <div class="segmented" id="quiz-type">
+            <button class="active" data-quiz-type="mixed">混合</button>
+            <button data-quiz-type="word">单词</button>
+            <button data-quiz-type="grammar">语法</button>
+            <button data-quiz-type="wrong">错题</button>
+          </div>
+          <button class="secondary-button" id="restart-quiz">重新出题</button>
+        </div>
+      </div>
+      <div class="quiz-shell panel">
+        <div class="quiz-meta">
+          <span id="quiz-number">第 1 题</span>
+          <span id="quiz-score">得分 0</span>
+        </div>
+        <div id="quiz-content"></div>
+        <div id="quiz-options" class="quiz-options"></div>
+        <div id="quiz-feedback" class="quiz-feedback"></div>
+        <button class="primary-button hidden" id="next-question">下一题</button>
+      </div>
+    </section>
+
+    <section id="library-view" class="view">
+      <div class="page-heading library-heading">
+        <div>
+          <p class="eyebrow">LIBRARY</p>
+          <h1>我的 N1 词库</h1>
+        </div>
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="search-input" type="search" placeholder="搜索单词、读音、释义或语法">
+        </label>
+      </div>
+      <div class="library-tools">
+        <div class="segmented" id="library-type">
+          <button class="active" data-type="all">全部</button>
+          <button data-type="word">单词</button>
+          <button data-type="grammar">语法</button>
+        </div>
+        <div class="segmented" id="library-status">
+          <button class="active" data-status="all">全部状态</button>
+          <button data-status="favorite">已收藏</button>
+          <button data-status="wrong">错题</button>
+          <button data-status="mastered">已掌握</button>
+        </div>
+        <div class="backup-tools">
+          <button class="secondary-button" id="export-progress">导出学习记录</button>
+          <button class="secondary-button" id="import-progress">导入学习记录</button>
+          <input class="hidden" id="progress-file" type="file" accept="application/json,.json">
+        </div>
+      </div>
+      <p class="backup-message quiet" id="backup-message" role="status"></p>
+      <div id="library-summary" class="library-summary"></div>
+      <div id="library-list" class="library-list"></div>
+    </section>
+  </main>
+
+  <dialog id="detail-dialog">
+    <button class="dialog-close" aria-label="关闭">×</button>
+    <div id="dialog-content"></div>
+  </dialog>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
