@@ -1,5 +1,6 @@
 (() => {
   const data = window.N1_DATA;
+  const mockExams = window.N1_MOCK_EXAMS || [];
   const STORAGE_KEY = "n1-study-progress-v1";
   const DEFAULT_DAILY_TARGET = 20;
   const QUIZ_SIZE = 20;
@@ -16,7 +17,8 @@
     daily: {},
     dailyTarget: DEFAULT_DAILY_TARGET,
     streak: 0,
-    lastStudyDay: null
+    lastStudyDay: null,
+    mockExamRuns: {}
   };
 
   let state = loadState();
@@ -32,11 +34,15 @@
     answered: false,
     typeScores: { word: 0, grammar: 0 }
   };
+  let activeMockExam = null;
+  let activeMockAttemptId = null;
+  let mockQuestionIndex = 0;
+  let mockTimerId = null;
   let libraryFilter = { type: "all", status: "all", query: "" };
 
   function loadState() {
     try {
-      return { ...defaultState, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) };
+      return normalizeState(JSON.parse(localStorage.getItem(STORAGE_KEY)));
     } catch {
       return structuredClone(defaultState);
     }
@@ -44,6 +50,62 @@
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function normalizeState(rawState) {
+    const merged = {
+      ...structuredClone(defaultState),
+      ...(rawState || {})
+    };
+    return {
+      ...merged,
+      items: { ...(merged.items || {}) },
+      daily: { ...(merged.daily || {}) },
+      mockExamRuns: normalizeMockExamRuns(merged.mockExamRuns)
+    };
+  }
+
+  function normalizeMockExamRuns(rawRuns = {}) {
+    const normalized = {};
+
+    Object.entries(rawRuns || {}).forEach(([examId, entry]) => {
+      if (!entry || typeof entry !== "object") return;
+
+      if (Array.isArray(entry.attempts)) {
+        const attempts = entry.attempts.map((attempt, index) =>
+          normalizeMockAttempt(attempt, `${examId}-attempt-${index + 1}`)
+        );
+        normalized[examId] = {
+          attempts,
+          activeAttemptId: attempts.some(attempt => attempt.id === entry.activeAttemptId)
+            ? entry.activeAttemptId
+            : attempts.find(attempt => !attempt.submittedAt)?.id || null
+        };
+        return;
+      }
+
+      if ("answers" in entry) {
+        const legacyAttempt = normalizeMockAttempt(entry, `${examId}-legacy-1`);
+        normalized[examId] = {
+          attempts: [legacyAttempt],
+          activeAttemptId: legacyAttempt.submittedAt ? null : legacyAttempt.id
+        };
+      }
+    });
+
+    return normalized;
+  }
+
+  function normalizeMockAttempt(attempt, fallbackId) {
+    return {
+      id: attempt?.id || fallbackId,
+      startedAt: typeof attempt?.startedAt === "number" ? attempt.startedAt : Date.now(),
+      answers: attempt?.answers && typeof attempt.answers === "object"
+        ? { ...attempt.answers }
+        : {},
+      submittedAt: typeof attempt?.submittedAt === "number" ? attempt.submittedAt : null,
+      expired: Boolean(attempt?.expired)
+    };
   }
 
   function showBackupMessage(message, isError = false) {
@@ -89,12 +151,7 @@
       if (!isValidProgress(imported)) {
         throw new Error("文件不是有效的 N1 研习室学习记录");
       }
-      state = {
-        ...structuredClone(defaultState),
-        ...imported,
-        items: { ...imported.items },
-        daily: { ...imported.daily }
-      };
+      state = normalizeState(imported);
       saveState();
       buildCardQueue();
       renderDashboard();
@@ -159,6 +216,7 @@
     if (view === "library") renderLibrary();
     if (view === "cards") renderCard();
     if (view === "quiz" && !quiz.questions.length) startQuiz();
+    if (view === "mock") renderMockLanding();
   }
 
   function dailyPick(type) {
@@ -443,6 +501,371 @@
     renderDashboard();
   }
 
+  function mockExamStore(examId) {
+    if (!state.mockExamRuns) state.mockExamRuns = {};
+    if (!state.mockExamRuns[examId]) {
+      state.mockExamRuns[examId] = { attempts: [], activeAttemptId: null };
+    }
+    return state.mockExamRuns[examId];
+  }
+
+  function mockAttempts(examId) {
+    return mockExamStore(examId).attempts;
+  }
+
+  function activeMockRun(examId) {
+    const store = mockExamStore(examId);
+    return store.attempts.find(attempt => attempt.id === store.activeAttemptId) || null;
+  }
+
+  function submittedMockRuns(examId) {
+    return mockAttempts(examId)
+      .filter(attempt => attempt.submittedAt)
+      .sort((left, right) => right.submittedAt - left.submittedAt);
+  }
+
+  function latestSubmittedMockRun(examId) {
+    return submittedMockRuns(examId)[0] || null;
+  }
+
+  function currentMockRun() {
+    if (!activeMockExam || !activeMockAttemptId) return null;
+    return mockAttempts(activeMockExam.id)
+      .find(attempt => attempt.id === activeMockAttemptId) || null;
+  }
+
+  function createMockAttempt(examId) {
+    const store = mockExamStore(examId);
+    const attempt = normalizeMockAttempt(
+      {
+        id: `${examId}-${Date.now()}`,
+        startedAt: Date.now(),
+        answers: {},
+        submittedAt: null,
+        expired: false
+      },
+      `${examId}-${Date.now()}`
+    );
+    store.attempts.push(attempt);
+    store.activeAttemptId = attempt.id;
+    saveState();
+    return attempt;
+  }
+
+  function scoreMockAttempt(exam, run) {
+    const correct = exam.questions.filter(
+      question => run.answers[question.id] === question.answer
+    ).length;
+    const sections = ["vocabulary", "grammar", "reading"];
+    const sectionLabels = { vocabulary: "词汇", grammar: "语法", reading: "读解" };
+    const sectionBreakdown = sections.map(section => {
+      const questions = exam.questions.filter(question => question.section === section);
+      const sectionCorrect = questions.filter(
+        question => run.answers[question.id] === question.answer
+      ).length;
+      return {
+        key: section,
+        label: sectionLabels[section],
+        correct: sectionCorrect,
+        total: questions.length
+      };
+    });
+    const typeMap = new Map();
+    exam.questions.forEach(question => {
+      if (!typeMap.has(question.type)) {
+        typeMap.set(question.type, { type: question.type, correct: 0, total: 0 });
+      }
+      const entry = typeMap.get(question.type);
+      entry.total += 1;
+      if (run.answers[question.id] === question.answer) {
+        entry.correct += 1;
+      }
+    });
+    return {
+      correct,
+      sectionBreakdown,
+      typeBreakdown: [...typeMap.values()]
+    };
+  }
+
+  function renderMockLanding() {
+    stopMockTimer();
+    activeMockExam = null;
+    activeMockAttemptId = null;
+    document.querySelector("#mock-exam").classList.add("hidden");
+    document.querySelector("#mock-result").classList.add("hidden");
+    document.querySelector("#mock-landing").classList.remove("hidden");
+    document.querySelector("#mock-landing").innerHTML = `
+      <article class="panel mock-intro">
+        <p class="eyebrow">考试说明</p>
+        <h2>按正式 N1 节奏完成语言知识与读解</h2>
+        <ul>
+          <li>总计时 110 分钟，不含听力。</li>
+          <li>答案自动保存在当前浏览器，可中途退出后继续。</li>
+          <li>交卷后保留成绩历史，并显示分区与题型复盘。</li>
+          <li>当前优先扩充第 1 回，全部题目与文章均为原创。</li>
+        </ul>
+      </article>
+      ${mockExams.map(exam => {
+        const activeRun = activeMockRun(exam.id);
+        const latestRun = latestSubmittedMockRun(exam.id);
+        const attempts = submittedMockRuns(exam.id);
+        const latestScore = latestRun ? scoreMockAttempt(exam, latestRun) : null;
+        return `
+          <article class="panel mock-exam-card">
+            <p class="eyebrow">${exam.status === "prototype" ? "框架验证卷" : "完整模拟卷"}</p>
+            <h2>${escapeHtml(exam.title)}</h2>
+            <p class="quiet">${escapeHtml(exam.description)}</p>
+            <p>${exam.questions.length} 题 · ${exam.durationMinutes} 分钟</p>
+            <div class="mock-exam-meta">
+              <span>${activeRun ? "有未交卷记录" : "可从头开始作答"}</span>
+              <span>${attempts.length ? `已完成 ${attempts.length} 次` : "尚无交卷记录"}</span>
+            </div>
+            ${latestScore ? `
+              <div class="mock-history-card">
+                <strong>最近成绩 ${latestScore.correct} / ${exam.questions.length}</strong>
+                <p class="quiet">${new Intl.DateTimeFormat("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                }).format(new Date(latestRun.submittedAt))}</p>
+              </div>
+            ` : ""}
+            <div class="mock-card-actions">
+              <button class="primary-button" data-start-mock="${exam.id}">
+                ${activeRun ? "继续考试" : "开始新一回"}
+              </button>
+              ${latestRun ? `
+                <button class="secondary-button" data-view-mock-result="${exam.id}:${latestRun.id}">
+                  查看最近成绩
+                </button>
+              ` : ""}
+            </div>
+            ${attempts.length ? `
+              <div class="mock-history-list">
+                ${attempts.slice(0, 3).map((attempt, index) => {
+                  const summary = scoreMockAttempt(exam, attempt);
+                  return `
+                    <button class="mock-history-entry" data-view-mock-result="${exam.id}:${attempt.id}">
+                      <span>第 ${attempts.length - index} 次</span>
+                      <strong>${summary.correct} / ${exam.questions.length}</strong>
+                    </button>
+                  `;
+                }).join("")}
+              </div>
+            ` : ""}
+          </article>`;
+      }).join("")}
+    `;
+  }
+
+  function startMockExam(examId, options = {}) {
+    const exam = mockExams.find(entry => entry.id === examId);
+    if (!exam) return;
+    activeMockExam = exam;
+    const { attemptId = null, reviewOnly = false, restart = false } = options;
+    if (reviewOnly && attemptId) {
+      activeMockAttemptId = attemptId;
+      renderMockResult();
+      return;
+    }
+    const run = restart ? createMockAttempt(examId) : activeMockRun(examId) || createMockAttempt(examId);
+    activeMockAttemptId = run.id;
+    mockQuestionIndex = 0;
+    document.querySelector("#mock-landing").classList.add("hidden");
+    document.querySelector("#mock-result").classList.add("hidden");
+    document.querySelector("#mock-exam").classList.remove("hidden");
+    renderMockQuestion();
+    startMockTimer();
+  }
+
+  function mockRemainingMilliseconds() {
+    if (!activeMockExam) return 0;
+    const run = currentMockRun();
+    if (!run) return 0;
+    return Math.max(
+      0,
+      activeMockExam.durationMinutes * 60000 - (Date.now() - run.startedAt)
+    );
+  }
+
+  function startMockTimer() {
+    stopMockTimer();
+    const update = () => {
+      const totalSeconds = Math.ceil(mockRemainingMilliseconds() / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      document.querySelector("#mock-timer").textContent =
+        `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      if (!totalSeconds) submitMockExam(true);
+    };
+    update();
+    mockTimerId = window.setInterval(update, 1000);
+  }
+
+  function stopMockTimer() {
+    if (mockTimerId) window.clearInterval(mockTimerId);
+    mockTimerId = null;
+  }
+
+  function renderMockQuestion() {
+    const question = activeMockExam?.questions[mockQuestionIndex];
+    if (!question) return;
+    const run = currentMockRun();
+    if (!run) return;
+    const sectionLabels = {
+      vocabulary: "语言知识 · 词汇",
+      grammar: "语言知识 · 语法",
+      reading: "读解"
+    };
+    document.querySelector("#mock-section-label").textContent =
+      sectionLabels[question.section];
+    document.querySelector("#mock-progress-label").textContent =
+      `第 ${mockQuestionIndex + 1} 题 / ${activeMockExam.questions.length}`;
+    document.querySelector("#mock-question").innerHTML = `
+      <p class="mock-question-type">${escapeHtml(question.type)}</p>
+      ${question.passage ? `<div class="mock-passage">${escapeHtml(question.passage)}</div>` : ""}
+      <div class="mock-prompt">${escapeHtml(question.prompt)}</div>
+      <div class="mock-options">
+        ${question.options.map((option, index) => `
+          <button class="${run.answers[question.id] === index ? "selected" : ""}"
+            data-mock-option="${index}">
+            ${index + 1}. ${escapeHtml(option)}
+          </button>
+        `).join("")}
+      </div>
+    `;
+    document.querySelector("#mock-question-nav").innerHTML =
+      activeMockExam.questions.map((entry, index) => `
+        <button class="${index === mockQuestionIndex ? "current" : ""}
+          ${run.answers[entry.id] !== undefined ? "answered" : ""}"
+          data-mock-question="${index}">${index + 1}</button>
+      `).join("");
+    const unansweredIndexes = activeMockExam.questions
+      .map((entry, index) => (run.answers[entry.id] === undefined ? index : -1))
+      .filter(index => index >= 0);
+    const unansweredCount = unansweredIndexes.length;
+    const jumpButton = document.querySelector("#mock-jump-unanswered");
+    document.querySelector("#mock-unanswered-count").textContent = unansweredCount
+      ? `未答 ${unansweredCount} 题`
+      : "已全部作答";
+    jumpButton.disabled = unansweredCount === 0;
+    jumpButton.textContent = unansweredCount
+      ? `跳到第 ${unansweredIndexes[0] + 1} 题`
+      : "已无未答题";
+    document.querySelector("#mock-prev").disabled = mockQuestionIndex === 0;
+    document.querySelector("#mock-next").textContent =
+      mockQuestionIndex === activeMockExam.questions.length - 1 ? "检查答题卡" : "下一题";
+  }
+
+  function selectMockAnswer(optionIndex) {
+    const question = activeMockExam.questions[mockQuestionIndex];
+    const run = currentMockRun();
+    if (!run) return;
+    run.answers[question.id] = optionIndex;
+    saveState();
+    renderMockQuestion();
+  }
+
+  function moveMockQuestion(offset) {
+    mockQuestionIndex = Math.max(
+      0,
+      Math.min(activeMockExam.questions.length - 1, mockQuestionIndex + offset)
+    );
+    renderMockQuestion();
+  }
+
+  function jumpToFirstUnanswered() {
+    if (!activeMockExam) return;
+    const run = currentMockRun();
+    if (!run) return;
+    const nextIndex = activeMockExam.questions.findIndex(
+      question => run.answers[question.id] === undefined
+    );
+    if (nextIndex === -1) return;
+    mockQuestionIndex = nextIndex;
+    renderMockQuestion();
+  }
+
+  function submitMockExam(expired = false) {
+    if (!activeMockExam) return;
+    const run = currentMockRun();
+    if (!run) return;
+    const unanswered = activeMockExam.questions.filter(
+      question => run.answers[question.id] === undefined
+    ).length;
+    if (!expired && unanswered && !window.confirm(`还有 ${unanswered} 题未作答，确定交卷吗？`)) {
+      return;
+    }
+    if (!expired && !window.confirm("交卷后不能修改答案，确定提交吗？")) return;
+    run.submittedAt = Date.now();
+    run.expired = expired;
+    mockExamStore(activeMockExam.id).activeAttemptId = null;
+    saveState();
+    renderMockResult();
+  }
+
+  function renderMockResult() {
+    stopMockTimer();
+    const exam = activeMockExam;
+    const run = currentMockRun();
+    if (!exam || !run) return;
+    const summary = scoreMockAttempt(exam, run);
+    const submittedAtText = run.submittedAt
+      ? new Intl.DateTimeFormat("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(new Date(run.submittedAt))
+      : "";
+    document.querySelector("#mock-landing").classList.add("hidden");
+    document.querySelector("#mock-exam").classList.add("hidden");
+    document.querySelector("#mock-result").classList.remove("hidden");
+    document.querySelector("#mock-result").innerHTML = `
+      <article class="panel mock-result-card">
+        <p class="eyebrow">${run.expired ? "时间到，已自动交卷" : "模拟考试完成"}</p>
+        <h2>${summary.correct} / ${exam.questions.length}</h2>
+        <p class="quiet">这是原始正确题数，不等同于 JLPT 官方尺度分。</p>
+        ${submittedAtText ? `<p class="quiet">交卷时间：${submittedAtText}</p>` : ""}
+        <div class="mock-breakdown">
+          ${summary.sectionBreakdown.map(item => `
+            <div><span>${item.label}</span>
+              <strong>${item.correct} / ${item.total}</strong></div>
+          `).join("")}
+        </div>
+        <div class="mock-type-breakdown">
+          ${summary.typeBreakdown.map(item => `
+            <div><span>${escapeHtml(item.type)}</span>
+              <strong>${item.correct} / ${item.total}</strong></div>
+          `).join("")}
+        </div>
+        <div class="mock-result-actions">
+          <button class="primary-button" id="mock-retry">再做一回</button>
+          <button class="secondary-button" id="mock-back-home">返回模考列表</button>
+        </div>
+        <div class="mock-review-list">
+          ${exam.questions.map((question, index) => {
+            const chosen = run.answers[question.id];
+            const isCorrect = chosen === question.answer;
+            return `
+                <div class="mock-review-item">
+                  <strong>${index + 1}. ${isCorrect ? "正确" : "错误"} · ${escapeHtml(question.type)}</strong>
+                  <p>${escapeHtml(question.prompt)}</p>
+                  ${chosen === undefined
+                    ? `<p class="quiet">你的答案：未作答</p>`
+                    : `<p class="quiet">你的答案：${chosen + 1}. ${escapeHtml(question.options[chosen])}</p>`}
+                  <p class="quiet">正确答案：${question.answer + 1}. ${escapeHtml(question.options[question.answer])}</p>
+                  <p>${escapeHtml(question.explanation)}</p>
+                </div>`;
+          }).join("")}
+        </div>
+      </article>
+    `;
+  }
+
   function matchesStatus(item, status) {
     const progress = itemState(item.id);
     if (status === "favorite") return progress.favorite;
@@ -594,6 +1017,39 @@
   document.querySelector("#quiz-options").addEventListener("click", event => {
     const button = event.target.closest("[data-option]");
     if (button) answerQuiz(button.dataset.option, button);
+  });
+  document.querySelector("#mock-landing").addEventListener("click", event => {
+    const button = event.target.closest("[data-start-mock]");
+    if (button) {
+      startMockExam(button.dataset.startMock);
+      return;
+    }
+    const historyButton = event.target.closest("[data-view-mock-result]");
+    if (!historyButton) return;
+    const [examId, attemptId] = historyButton.dataset.viewMockResult.split(":");
+    startMockExam(examId, { attemptId, reviewOnly: true });
+  });
+  document.querySelector("#mock-question").addEventListener("click", event => {
+    const button = event.target.closest("[data-mock-option]");
+    if (button) selectMockAnswer(Number(button.dataset.mockOption));
+  });
+  document.querySelector("#mock-question-nav").addEventListener("click", event => {
+    const button = event.target.closest("[data-mock-question]");
+    if (!button) return;
+    mockQuestionIndex = Number(button.dataset.mockQuestion);
+    renderMockQuestion();
+  });
+  document.querySelector("#mock-jump-unanswered").addEventListener("click", () => {
+    jumpToFirstUnanswered();
+  });
+  document.querySelector("#mock-prev").addEventListener("click", () => moveMockQuestion(-1));
+  document.querySelector("#mock-next").addEventListener("click", () => moveMockQuestion(1));
+  document.querySelector("#mock-submit").addEventListener("click", () => submitMockExam());
+  document.querySelector("#mock-result").addEventListener("click", event => {
+    if (event.target.closest("#mock-back-home")) renderMockLanding();
+    if (event.target.closest("#mock-retry") && activeMockExam) {
+      startMockExam(activeMockExam.id, { restart: true });
+    }
   });
   document.querySelector("#search-input").addEventListener("input", event => {
     libraryFilter.query = event.target.value.trim();

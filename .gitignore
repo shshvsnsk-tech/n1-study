@@ -8,6 +8,7 @@ tools/
 
 # Local automation and verification artifacts
 automation-progress.json
+mock-exam-progress.json
 preview.png
 mobile-preview.png
 

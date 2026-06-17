@@ -20,6 +20,7 @@
       <button class="nav-item active" data-view="home">今日</button>
       <button class="nav-item" data-view="cards">卡片</button>
       <button class="nav-item" data-view="quiz">测验</button>
+      <button class="nav-item" data-view="mock">模考</button>
       <button class="nav-item" data-view="library">词库</button>
     </nav>
   </header>
@@ -155,6 +156,43 @@
       </div>
     </section>
 
+    <section id="mock-view" class="view">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">N1 MOCK EXAM</p>
+          <h1>N1 模拟考试</h1>
+          <p class="quiet mock-heading-note">语言知识（词汇／语法）与读解 · 不含听力 · 110 分钟</p>
+        </div>
+      </div>
+      <div id="mock-landing" class="mock-landing"></div>
+      <div id="mock-exam" class="mock-exam hidden">
+        <div class="mock-toolbar panel">
+          <div>
+            <p class="eyebrow" id="mock-section-label">语言知识</p>
+            <strong id="mock-progress-label">第 1 题</strong>
+          </div>
+          <div class="mock-timer" id="mock-timer">110:00</div>
+          <button class="secondary-button" id="mock-submit">交卷</button>
+        </div>
+        <div class="mock-layout">
+          <article class="panel mock-question-panel" id="mock-question"></article>
+          <aside class="panel mock-answer-sheet">
+            <p class="eyebrow">答题卡</p>
+            <div class="mock-answer-status">
+              <strong id="mock-unanswered-count">未答 0 题</strong>
+              <button class="text-button" id="mock-jump-unanswered" type="button">跳到未答题</button>
+            </div>
+            <div id="mock-question-nav" class="mock-question-nav"></div>
+            <div class="mock-nav-actions">
+              <button class="secondary-button" id="mock-prev">上一题</button>
+              <button class="primary-button" id="mock-next">下一题</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div id="mock-result" class="mock-result hidden"></div>
+    </section>
+
     <section id="library-view" class="view">
       <div class="page-heading library-heading">
         <div>
@@ -196,6 +234,7 @@
   </dialog>
 
   <script src="data.js"></script>
+  <script src="mock-data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
