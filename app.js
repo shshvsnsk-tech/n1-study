@@ -957,7 +957,7 @@
           <li>总计时 55 分钟，按 N1 听力题型分组练习。</li>
           <li>每题可以反复播放；iOS 首次播放需要手动点按钮授权声音。</li>
           <li>答案自动保存在当前浏览器，中途退出后可继续。</li>
-          <li>交卷后显示题型复盘、原文和解析，便于二刷。</li>
+          <li>交卷后显示题型复盘、原文和解析，并保留历史成绩记录。</li>
         </ul>
       </article>
       ${listeningExams.map(exam => {
@@ -996,6 +996,19 @@
                 </button>
               ` : ""}
             </div>
+            ${attempts.length ? `
+              <div class="mock-history-list listening-history-list">
+                ${attempts.slice(0, 3).map((attempt, index) => {
+                  const summary = scoreListeningAttempt(exam, attempt);
+                  return `
+                    <button class="mock-history-entry listening-history-entry" data-view-listening-result="${exam.id}:${attempt.id}">
+                      <span>第 ${attempts.length - index} 次</span>
+                      <strong>${summary.correct} / ${exam.questions.length}</strong>
+                    </button>
+                  `;
+                }).join("")}
+              </div>
+            ` : ""}
           </article>`;
       }).join("")}
     `;
