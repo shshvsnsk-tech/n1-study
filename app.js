@@ -111,7 +111,10 @@
         ? { ...attempt.answers }
         : {},
       submittedAt: typeof attempt?.submittedAt === "number" ? attempt.submittedAt : null,
-      expired: Boolean(attempt?.expired)
+      expired: Boolean(attempt?.expired),
+      lastQuestionIndex: Number.isInteger(attempt?.lastQuestionIndex) && attempt.lastQuestionIndex >= 0
+        ? attempt.lastQuestionIndex
+        : 0
     };
   }
 
@@ -1012,7 +1015,9 @@
       ? createListeningAttempt(examId)
       : activeListeningRun(examId) || createListeningAttempt(examId);
     activeListeningAttemptId = run.id;
-    listeningQuestionIndex = 0;
+    listeningQuestionIndex = restart
+      ? 0
+      : Math.max(0, Math.min(exam.questions.length - 1, run.lastQuestionIndex || 0));
     document.querySelector("#listening-landing").classList.add("hidden");
     document.querySelector("#listening-result").classList.add("hidden");
     document.querySelector("#listening-exam").classList.remove("hidden");
@@ -1054,6 +1059,8 @@
     if (!question) return;
     const run = currentListeningRun();
     if (!run) return;
+    run.lastQuestionIndex = listeningQuestionIndex;
+    saveState();
     document.querySelector("#listening-type-label").textContent = question.type;
     document.querySelector("#listening-progress-label").textContent =
       `第 ${listeningQuestionIndex + 1} 题 / ${activeListeningExam.questions.length}`;
@@ -1153,13 +1160,12 @@
     listeningExamStore(activeListeningExam.id).activeAttemptId = null;
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     saveState();
-    renderListeningResult();
+    renderListeningResult(run);
   }
 
-  function renderListeningResult() {
+  function renderListeningResult(run = currentListeningRun()) {
     stopListeningTimer();
     const exam = activeListeningExam;
-    const run = currentListeningRun();
     if (!exam || !run) return;
     const summary = scoreListeningAttempt(exam, run);
     const submittedAtText = run.submittedAt
