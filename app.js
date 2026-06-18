@@ -1,6 +1,7 @@
 (() => {
   const data = window.N1_DATA;
   const mockExams = window.N1_MOCK_EXAMS || [];
+  const listeningExams = window.N1_LISTENING_EXAMS || [];
   const STORAGE_KEY = "n1-study-progress-v1";
   const DEFAULT_DAILY_TARGET = 20;
   const QUIZ_SIZE = 20;
@@ -18,7 +19,8 @@
     dailyTarget: DEFAULT_DAILY_TARGET,
     streak: 0,
     lastStudyDay: null,
-    mockExamRuns: {}
+    mockExamRuns: {},
+    listeningRuns: {}
   };
 
   let state = loadState();
@@ -38,6 +40,10 @@
   let activeMockAttemptId = null;
   let mockQuestionIndex = 0;
   let mockTimerId = null;
+  let activeListeningExam = null;
+  let activeListeningAttemptId = null;
+  let listeningQuestionIndex = 0;
+  let listeningTimerId = null;
   let libraryFilter = { type: "all", status: "all", query: "" };
 
   function loadState() {
@@ -61,7 +67,8 @@
       ...merged,
       items: { ...(merged.items || {}) },
       daily: { ...(merged.daily || {}) },
-      mockExamRuns: normalizeMockExamRuns(merged.mockExamRuns)
+      mockExamRuns: normalizeMockExamRuns(merged.mockExamRuns),
+      listeningRuns: normalizeMockExamRuns(merged.listeningRuns)
     };
   }
 
@@ -217,6 +224,7 @@
     if (view === "cards") renderCard();
     if (view === "quiz" && !quiz.questions.length) startQuiz();
     if (view === "mock") renderMockLanding();
+    if (view === "listening") renderListeningLanding();
   }
 
   function dailyPick(type) {
@@ -866,6 +874,346 @@
     `;
   }
 
+  function listeningExamStore(examId) {
+    if (!state.listeningRuns) state.listeningRuns = {};
+    if (!state.listeningRuns[examId]) {
+      state.listeningRuns[examId] = { attempts: [], activeAttemptId: null };
+    }
+    return state.listeningRuns[examId];
+  }
+
+  function listeningAttempts(examId) {
+    return listeningExamStore(examId).attempts;
+  }
+
+  function activeListeningRun(examId) {
+    const store = listeningExamStore(examId);
+    return store.attempts.find(attempt => attempt.id === store.activeAttemptId) || null;
+  }
+
+  function submittedListeningRuns(examId) {
+    return listeningAttempts(examId)
+      .filter(attempt => attempt.submittedAt)
+      .sort((left, right) => right.submittedAt - left.submittedAt);
+  }
+
+  function latestSubmittedListeningRun(examId) {
+    return submittedListeningRuns(examId)[0] || null;
+  }
+
+  function currentListeningRun() {
+    if (!activeListeningExam || !activeListeningAttemptId) return null;
+    return listeningAttempts(activeListeningExam.id)
+      .find(attempt => attempt.id === activeListeningAttemptId) || null;
+  }
+
+  function createListeningAttempt(examId) {
+    const store = listeningExamStore(examId);
+    const attempt = normalizeMockAttempt(
+      {
+        id: `${examId}-${Date.now()}`,
+        startedAt: Date.now(),
+        answers: {}
+      },
+      `${examId}-attempt-${store.attempts.length + 1}`
+    );
+    store.attempts.push(attempt);
+    store.activeAttemptId = attempt.id;
+    saveState();
+    return attempt;
+  }
+
+  function scoreListeningAttempt(exam, run) {
+    const correct = exam.questions.filter(
+      question => run.answers[question.id] === question.answer
+    ).length;
+    const typeMap = new Map();
+    exam.questions.forEach(question => {
+      if (!typeMap.has(question.type)) {
+        typeMap.set(question.type, { type: question.type, correct: 0, total: 0 });
+      }
+      const entry = typeMap.get(question.type);
+      entry.total += 1;
+      if (run.answers[question.id] === question.answer) entry.correct += 1;
+    });
+    return { correct, typeBreakdown: [...typeMap.values()] };
+  }
+
+  function renderListeningLanding() {
+    stopListeningTimer();
+    activeListeningExam = null;
+    activeListeningAttemptId = null;
+    document.querySelector("#listening-exam").classList.add("hidden");
+    document.querySelector("#listening-result").classList.add("hidden");
+    document.querySelector("#listening-landing").classList.remove("hidden");
+    document.querySelector("#listening-landing").innerHTML = `
+      <article class="panel mock-intro">
+        <p class="eyebrow">训练说明</p>
+        <h2>用浏览器日语朗读模拟 N1 听力节奏</h2>
+        <ul>
+          <li>总计时 55 分钟，按 N1 听力题型分组练习。</li>
+          <li>每题可以反复播放；iOS 首次播放需要手动点按钮授权声音。</li>
+          <li>答案自动保存在当前浏览器，中途退出后可继续。</li>
+          <li>交卷后显示题型复盘、原文和解析，便于二刷。</li>
+        </ul>
+      </article>
+      ${listeningExams.map(exam => {
+        const activeRun = activeListeningRun(exam.id);
+        const latestRun = latestSubmittedListeningRun(exam.id);
+        const attempts = submittedListeningRuns(exam.id);
+        const latestScore = latestRun ? scoreListeningAttempt(exam, latestRun) : null;
+        return `
+          <article class="panel mock-exam-card listening-card">
+            <p class="eyebrow">${exam.status === "seed" ? "第一版训练卷" : "听力训练卷"}</p>
+            <h2>${escapeHtml(exam.title)}</h2>
+            <p class="quiet">${escapeHtml(exam.description)}</p>
+            <p>${exam.questions.length} 题 · ${exam.durationMinutes} 分钟</p>
+            <div class="mock-exam-meta">
+              <span>${activeRun ? "有未交卷记录" : "可从头开始作答"}</span>
+              <span>${attempts.length ? `已完成 ${attempts.length} 次` : "尚无交卷记录"}</span>
+            </div>
+            ${latestScore ? `
+              <div class="mock-history-card">
+                <strong>最近成绩 ${latestScore.correct} / ${exam.questions.length}</strong>
+                <p class="quiet">${new Intl.DateTimeFormat("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                }).format(new Date(latestRun.submittedAt))}</p>
+              </div>
+            ` : ""}
+            <div class="mock-card-actions">
+              <button class="primary-button" data-start-listening="${exam.id}">
+                ${activeRun ? "继续听力" : "开始听力训练"}
+              </button>
+              ${latestRun ? `
+                <button class="secondary-button" data-view-listening-result="${exam.id}:${latestRun.id}">
+                  查看最近成绩
+                </button>
+              ` : ""}
+            </div>
+          </article>`;
+      }).join("")}
+    `;
+  }
+
+  function startListeningExam(examId, options = {}) {
+    const exam = listeningExams.find(entry => entry.id === examId);
+    if (!exam) return;
+    activeListeningExam = exam;
+    const { attemptId = null, reviewOnly = false, restart = false } = options;
+    if (reviewOnly && attemptId) {
+      activeListeningAttemptId = attemptId;
+      renderListeningResult();
+      return;
+    }
+    const run = restart
+      ? createListeningAttempt(examId)
+      : activeListeningRun(examId) || createListeningAttempt(examId);
+    activeListeningAttemptId = run.id;
+    listeningQuestionIndex = 0;
+    document.querySelector("#listening-landing").classList.add("hidden");
+    document.querySelector("#listening-result").classList.add("hidden");
+    document.querySelector("#listening-exam").classList.remove("hidden");
+    renderListeningQuestion();
+    startListeningTimer();
+  }
+
+  function listeningRemainingMilliseconds() {
+    if (!activeListeningExam) return 0;
+    const run = currentListeningRun();
+    if (!run) return 0;
+    return Math.max(
+      0,
+      activeListeningExam.durationMinutes * 60000 - (Date.now() - run.startedAt)
+    );
+  }
+
+  function startListeningTimer() {
+    stopListeningTimer();
+    const update = () => {
+      const totalSeconds = Math.ceil(listeningRemainingMilliseconds() / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      document.querySelector("#listening-timer").textContent =
+        `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      if (!totalSeconds) submitListeningExam(true);
+    };
+    update();
+    listeningTimerId = window.setInterval(update, 1000);
+  }
+
+  function stopListeningTimer() {
+    if (listeningTimerId) window.clearInterval(listeningTimerId);
+    listeningTimerId = null;
+  }
+
+  function renderListeningQuestion() {
+    const question = activeListeningExam?.questions[listeningQuestionIndex];
+    if (!question) return;
+    const run = currentListeningRun();
+    if (!run) return;
+    document.querySelector("#listening-type-label").textContent = question.type;
+    document.querySelector("#listening-progress-label").textContent =
+      `第 ${listeningQuestionIndex + 1} 题 / ${activeListeningExam.questions.length}`;
+    document.querySelector("#listening-audio-status").textContent = "请先播放题目音频";
+    document.querySelector("#listening-question").innerHTML = `
+      <p class="mock-question-type">${escapeHtml(question.type)}</p>
+      <div class="mock-prompt">${escapeHtml(question.prompt)}</div>
+      <div class="listening-note">
+        <strong>播放提示</strong>
+        <p>点击上方“播放音频”。建议先听完再看选项；复盘时会显示完整原文。</p>
+      </div>
+      <div class="mock-options">
+        ${question.options.map((option, index) => `
+          <button class="${run.answers[question.id] === index ? "selected" : ""}"
+            data-listening-option="${index}">
+            ${index + 1}. ${escapeHtml(option)}
+          </button>
+        `).join("")}
+      </div>
+    `;
+    document.querySelector("#listening-question-nav").innerHTML =
+      activeListeningExam.questions.map((entry, index) => `
+        <button class="${index === listeningQuestionIndex ? "current" : ""}
+          ${run.answers[entry.id] !== undefined ? "answered" : ""}"
+          data-listening-question="${index}">${index + 1}</button>
+      `).join("");
+    const unansweredIndexes = activeListeningExam.questions
+      .map((entry, index) => (run.answers[entry.id] === undefined ? index : -1))
+      .filter(index => index >= 0);
+    const unansweredCount = unansweredIndexes.length;
+    const jumpButton = document.querySelector("#listening-jump-unanswered");
+    document.querySelector("#listening-unanswered-count").textContent = unansweredCount
+      ? `未答 ${unansweredCount} 题`
+      : "已全部作答";
+    jumpButton.disabled = unansweredCount === 0;
+    jumpButton.textContent = unansweredCount
+      ? `跳到第 ${unansweredIndexes[0] + 1} 题`
+      : "已无未答题";
+    document.querySelector("#listening-prev").disabled = listeningQuestionIndex === 0;
+    document.querySelector("#listening-next").textContent =
+      listeningQuestionIndex === activeListeningExam.questions.length - 1
+        ? "检查答题卡"
+        : "下一题";
+  }
+
+  function playListeningQuestion() {
+    const question = activeListeningExam?.questions[listeningQuestionIndex];
+    if (!question) return;
+    const ok = speakJapanese(question.audioText);
+    document.querySelector("#listening-audio-status").textContent = ok
+      ? "正在播放；可再次点击重播"
+      : "当前浏览器不支持朗读，可交卷后看原文复盘";
+  }
+
+  function selectListeningAnswer(optionIndex) {
+    const question = activeListeningExam.questions[listeningQuestionIndex];
+    const run = currentListeningRun();
+    if (!run) return;
+    run.answers[question.id] = optionIndex;
+    saveState();
+    renderListeningQuestion();
+  }
+
+  function moveListeningQuestion(offset) {
+    listeningQuestionIndex = Math.max(
+      0,
+      Math.min(activeListeningExam.questions.length - 1, listeningQuestionIndex + offset)
+    );
+    renderListeningQuestion();
+  }
+
+  function jumpToFirstUnansweredListening() {
+    if (!activeListeningExam) return;
+    const run = currentListeningRun();
+    if (!run) return;
+    const nextIndex = activeListeningExam.questions.findIndex(
+      question => run.answers[question.id] === undefined
+    );
+    if (nextIndex === -1) return;
+    listeningQuestionIndex = nextIndex;
+    renderListeningQuestion();
+  }
+
+  function submitListeningExam(expired = false) {
+    if (!activeListeningExam) return;
+    const run = currentListeningRun();
+    if (!run) return;
+    const unanswered = activeListeningExam.questions.filter(
+      question => run.answers[question.id] === undefined
+    ).length;
+    if (!expired && unanswered && !window.confirm(`还有 ${unanswered} 题未作答，确定交卷吗？`)) {
+      return;
+    }
+    if (!expired && !window.confirm("交卷后会进入复盘，确定提交吗？")) return;
+    run.submittedAt = Date.now();
+    run.expired = expired;
+    listeningExamStore(activeListeningExam.id).activeAttemptId = null;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    saveState();
+    renderListeningResult();
+  }
+
+  function renderListeningResult() {
+    stopListeningTimer();
+    const exam = activeListeningExam;
+    const run = currentListeningRun();
+    if (!exam || !run) return;
+    const summary = scoreListeningAttempt(exam, run);
+    const submittedAtText = run.submittedAt
+      ? new Intl.DateTimeFormat("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(new Date(run.submittedAt))
+      : "";
+    document.querySelector("#listening-landing").classList.add("hidden");
+    document.querySelector("#listening-exam").classList.add("hidden");
+    document.querySelector("#listening-result").classList.remove("hidden");
+    document.querySelector("#listening-result").innerHTML = `
+      <article class="panel mock-result-card">
+        <p class="eyebrow">${run.expired ? "时间到，已自动交卷" : "听力训练完成"}</p>
+        <h2>${summary.correct} / ${exam.questions.length}</h2>
+        <p class="quiet">这是原创练习题的原始正确题数，不等同于 JLPT 官方尺度分。</p>
+        ${submittedAtText ? `<p class="quiet">交卷时间：${submittedAtText}</p>` : ""}
+        <div class="mock-type-breakdown listening-type-breakdown">
+          ${summary.typeBreakdown.map(item => `
+            <div><span>${escapeHtml(item.type)}</span>
+              <strong>${item.correct} / ${item.total}</strong></div>
+          `).join("")}
+        </div>
+        <div class="mock-result-actions">
+          <button class="primary-button" id="listening-retry">再做一回</button>
+          <button class="secondary-button" id="listening-back-home">返回听力列表</button>
+        </div>
+        <div class="mock-review-list">
+          ${exam.questions.map((question, index) => {
+            const chosen = run.answers[question.id];
+            const isCorrect = chosen === question.answer;
+            return `
+              <div class="mock-review-item listening-review-item">
+                <strong>${index + 1}. ${isCorrect ? "正确" : "错误"} · ${escapeHtml(question.type)}</strong>
+                <p>${escapeHtml(question.prompt)}</p>
+                ${chosen === undefined
+                  ? `<p class="quiet">你的答案：未作答</p>`
+                  : `<p class="quiet">你的答案：${chosen + 1}. ${escapeHtml(question.options[chosen])}</p>`}
+                <p class="quiet">正确答案：${question.answer + 1}. ${escapeHtml(question.options[question.answer])}</p>
+                <details>
+                  <summary>查看听力原文与解析</summary>
+                  <p>${escapeHtml(question.audioText)}</p>
+                  <p>${escapeHtml(question.explanation)}</p>
+                </details>
+              </div>`;
+          }).join("")}
+        </div>
+      </article>
+    `;
+  }
+
   function matchesStatus(item, status) {
     const progress = itemState(item.id);
     if (status === "favorite") return progress.favorite;
@@ -1049,6 +1397,40 @@
     if (event.target.closest("#mock-back-home")) renderMockLanding();
     if (event.target.closest("#mock-retry") && activeMockExam) {
       startMockExam(activeMockExam.id, { restart: true });
+    }
+  });
+  document.querySelector("#listening-landing").addEventListener("click", event => {
+    const button = event.target.closest("[data-start-listening]");
+    if (button) {
+      startListeningExam(button.dataset.startListening);
+      return;
+    }
+    const historyButton = event.target.closest("[data-view-listening-result]");
+    if (!historyButton) return;
+    const [examId, attemptId] = historyButton.dataset.viewListeningResult.split(":");
+    startListeningExam(examId, { attemptId, reviewOnly: true });
+  });
+  document.querySelector("#listening-play").addEventListener("click", playListeningQuestion);
+  document.querySelector("#listening-question").addEventListener("click", event => {
+    const button = event.target.closest("[data-listening-option]");
+    if (button) selectListeningAnswer(Number(button.dataset.listeningOption));
+  });
+  document.querySelector("#listening-question-nav").addEventListener("click", event => {
+    const button = event.target.closest("[data-listening-question]");
+    if (!button) return;
+    listeningQuestionIndex = Number(button.dataset.listeningQuestion);
+    renderListeningQuestion();
+  });
+  document.querySelector("#listening-jump-unanswered").addEventListener("click", () => {
+    jumpToFirstUnansweredListening();
+  });
+  document.querySelector("#listening-prev").addEventListener("click", () => moveListeningQuestion(-1));
+  document.querySelector("#listening-next").addEventListener("click", () => moveListeningQuestion(1));
+  document.querySelector("#listening-submit").addEventListener("click", () => submitListeningExam());
+  document.querySelector("#listening-result").addEventListener("click", event => {
+    if (event.target.closest("#listening-back-home")) renderListeningLanding();
+    if (event.target.closest("#listening-retry") && activeListeningExam) {
+      startListeningExam(activeListeningExam.id, { restart: true });
     }
   });
   document.querySelector("#search-input").addEventListener("input", event => {

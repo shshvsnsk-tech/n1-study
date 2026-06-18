@@ -390,6 +390,42 @@ h2 { font-size: 24px; font-weight: 500; }
 .mock-review-list { text-align: left; margin-top: 28px; }
 .mock-review-item { border-top: 1px solid var(--line); padding: 18px 0; line-height: 1.7; }
 
+.listening-heading-note { margin: 8px 0 0; }
+.listening-landing { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.listening-toolbar {
+  position: sticky;
+  top: 88px;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 1.2fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 24px;
+  margin-bottom: 18px;
+}
+.listening-toolbar p { margin-bottom: 4px; }
+.listening-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.listening-note {
+  border: 1px solid var(--line);
+  background: rgba(244, 239, 230, 0.58);
+  padding: 14px 16px;
+  margin: 14px 0 22px;
+}
+.listening-note p { margin: 6px 0 0; color: var(--muted); line-height: 1.7; }
+.listening-type-breakdown { grid-template-columns: repeat(5, 1fr); }
+.listening-review-item details {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.5);
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+.listening-review-item summary { cursor: pointer; color: var(--red); }
+
 .library-heading { gap: 30px; }
 .search-box { width: min(430px, 50vw); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ink); padding: 10px 4px; }
 .search-box input { width: 100%; border: 0; outline: 0; background: transparent; }
@@ -444,6 +480,7 @@ dialog::backdrop { background: rgba(40,34,28,0.48); backdrop-filter: blur(3px); 
   .progress-panel { grid-column: 1 / -1; }
   .study-layout { grid-template-columns: 1fr; }
   .mock-layout { grid-template-columns: 1fr; }
+  .listening-toolbar { grid-template-columns: 1fr; position: static; }
   .session-panel { display: none; }
   .study-card { height: 400px; }
 }
@@ -458,11 +495,14 @@ dialog::backdrop { background: rgba(40,34,28,0.48); backdrop-filter: blur(3px); 
   .enso { display: none; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .mock-landing { grid-template-columns: 1fr; }
+  .listening-landing { grid-template-columns: 1fr; }
   .mock-intro { grid-column: auto; }
   .mock-toolbar { top: 116px; }
+  .listening-toolbar { top: 116px; }
   .mock-answer-sheet { order: -1; }
   .mock-breakdown { grid-template-columns: 1fr; }
   .mock-type-breakdown { grid-template-columns: 1fr; }
+  .listening-type-breakdown { grid-template-columns: 1fr; }
   .progress-panel { grid-column: auto; }
   .page-heading, .library-heading { display: block; }
   .page-heading .segmented, .page-heading .secondary-button { margin-top: 20px; }

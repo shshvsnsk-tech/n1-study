@@ -21,6 +21,7 @@
       <button class="nav-item" data-view="cards">卡片</button>
       <button class="nav-item" data-view="quiz">测验</button>
       <button class="nav-item" data-view="mock">模考</button>
+      <button class="nav-item" data-view="listening">聴解</button>
       <button class="nav-item" data-view="library">词库</button>
     </nav>
   </header>
@@ -193,6 +194,47 @@
       <div id="mock-result" class="mock-result hidden"></div>
     </section>
 
+    <section id="listening-view" class="view">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">N1 LISTENING</p>
+          <h1>N1 听力训练</h1>
+          <p class="quiet listening-heading-note">聴解 · 55 分钟 · 浏览器日语朗读 · 原创练习题</p>
+        </div>
+      </div>
+      <div id="listening-landing" class="listening-landing"></div>
+      <div id="listening-exam" class="listening-exam hidden">
+        <div class="listening-toolbar panel">
+          <div>
+            <p class="eyebrow" id="listening-type-label">聴解</p>
+            <strong id="listening-progress-label">第 1 题</strong>
+          </div>
+          <div class="listening-player">
+            <button class="secondary-button" id="listening-play">播放音频</button>
+            <span id="listening-audio-status" class="quiet">请先播放题目音频</span>
+          </div>
+          <div class="mock-timer" id="listening-timer">55:00</div>
+          <button class="secondary-button" id="listening-submit">交卷</button>
+        </div>
+        <div class="mock-layout">
+          <article class="panel mock-question-panel" id="listening-question"></article>
+          <aside class="panel mock-answer-sheet">
+            <p class="eyebrow">答题卡</p>
+            <div class="mock-answer-status">
+              <strong id="listening-unanswered-count">未答 0 题</strong>
+              <button class="text-button" id="listening-jump-unanswered" type="button">跳到未答题</button>
+            </div>
+            <div id="listening-question-nav" class="mock-question-nav"></div>
+            <div class="mock-nav-actions">
+              <button class="secondary-button" id="listening-prev">上一题</button>
+              <button class="primary-button" id="listening-next">下一题</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div id="listening-result" class="mock-result hidden"></div>
+    </section>
+
     <section id="library-view" class="view">
       <div class="page-heading library-heading">
         <div>
@@ -235,6 +277,7 @@
 
   <script src="data.js"></script>
   <script src="mock-data.js"></script>
+  <script src="listening-data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
